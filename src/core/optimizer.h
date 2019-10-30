@@ -22,20 +22,22 @@ struct PoseData
 class Optimizer
 {
 public:
-    Optimizer();
+    Optimizer(){};
 
-    void addPose(transform::Rigid3f pose);
-    void addPoints(std::vector<Eigen::Vector3f>& points);
+    void addPose(const transform::Rigid3f pose);
+    void addPoints(const std::vector<Eigen::Vector3f>& points);
+    void addKeys(const std::vector<cv::Point>& points);
     void solve();
-
+    void addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K, std::list<std::vector<int>>& tracks);
+    transform::Rigid3f getNewPose() const;
 private:
     PoseData FromPose(const transform::Rigid3f &pose);
 
 
-    void addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K, std::list<std::vector<int>>& tracks, std::list<Frame*> frames);
     std::vector<PoseData> poses_;
     YAML::Node *config_;
     std::vector<std::array<double, 3>> points_;
+    std::vector<std::vector<std::array<double, 2>>> keys_;
 };
 
 

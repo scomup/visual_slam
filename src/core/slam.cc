@@ -33,10 +33,15 @@ namespace core
 
 Slam::Slam(const YAML::Node* config)
 {
-
     tracking_ = common::make_unique<Tracking>(config);
 }
 
+const transform::Rigid3f& Slam::Tcw() const{
+    if(tracking_ != nullptr)
+        return tracking_->Tcw();
+    else
+        transform::Rigid3f();
+}
 int Slam::TrackStereoCamera(std::unique_ptr<sensor::MultiImageData> image)
 {
     tracking_->HandleImage(std::move(image));

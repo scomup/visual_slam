@@ -27,19 +27,23 @@ public:
 
     void HandleOdometry(const std::unique_ptr<sensor::OdometryData> odom);
     void HandleImage(const std::unique_ptr<sensor::MultiImageData> image);
+    const transform::Rigid3f& Tcw() const;
 
 private:
     void updateTracks();
     void updatePoses();
+    void showReporjection();
 
 
     std::list<Frame*> frames_;
     SuperpointFrontend *kp_frontend_;
     const YAML::Node* config_;
     const int max_tracks_;
+    Eigen::Matrix3f K_;
 
     std::list<std::vector<int>> tracks_;
     std::vector<Eigen::Vector3f> tracked_points_;
+    transform::Rigid3f Tcw_;
 
 };
 

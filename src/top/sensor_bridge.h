@@ -38,7 +38,7 @@ namespace top
 class SensorBridge
 {
 public:
-  explicit SensorBridge(std::unique_ptr<core::Slam> slam);
+  explicit SensorBridge(std::shared_ptr<core::Slam> slam);
 
   SensorBridge(const SensorBridge &) = delete;
   SensorBridge &operator=(const SensorBridge &) = delete;
@@ -51,7 +51,7 @@ private:
   std::unique_ptr<sensor::ImageData> ToImageData( const sensor_msgs::Image::ConstPtr &msg);
   std::unique_ptr<sensor::ImageData> temp_image0_;
   std::unique_ptr<sensor::ImageData> temp_image1_;
-  std::unique_ptr<core::Slam> slam_;
+  std::shared_ptr<core::Slam> slam_;
 
 
   transform::Rigid3d ToRigid3d(const geometry_msgs::TransformStamped &transform);

@@ -11,6 +11,10 @@
 #include "src/core/frame.h"
 #include <boost/format.hpp>
 
+#include <boost/format.hpp>
+#include "src/core/optimizer.h"
+
+
 using namespace std;
 
 namespace visual_slam
@@ -38,6 +42,17 @@ Tracking::Tracking(const YAML::Node *config)
 {
     kp_frontend_ = new SuperpointFrontend(config);
     Frame::setFrameParam(config);
+    float fx = (*config_)["camera"]["fx"].as<float>();
+    float fy = (*config_)["camera"]["fy"].as<float>();
+    float cx = (*config_)["camera"]["cx"].as<float>();
+    float cy = (*config_)["camera"]["cy"].as<float>();
+    K_ = Eigen::Matrix3f::Identity();
+    K_(0, 0) = fx;
+    K_(1, 1) = fy;
+    K_(0, 2) = cx;
+    K_(1, 2) = cy;
+    Tcw_ = transform::Rigid3f();
+
 }
 
 void Tracking::HandleOdometry(std::unique_ptr<sensor::OdometryData> odom)
@@ -48,18 +63,47 @@ void Tracking::updatePoses()
 {
     if (frames_.size() == 1)
     {
-        transform::Rigid3f pose = transform::Rigid3f();
-        frames_.back()->setPose(pose);
+        transform::Rigid3f Tcw = transform::Rigid3f();
+        frames_.back()->setTcw(Tcw);
         return;
     }
-    auto &current_frame = *(frames_.rbegin());
-    auto &curr_keys = current_frame->keys0();
+    if (frames_.size() >= 2)
+    {
+        Optimizer opt;
+        auto frame_it = frames_.begin();
+        auto track_it = tracks_.begin();
 
-    auto &last_frame = *(++frames_.rbegin());
-    auto &last_keys = last_frame->keys0();
+        while (frame_it != frames_.end())
+        {
+            opt.addPose((*frame_it)->Tcw());
 
-    auto curr_track = *(tracks_.rbegin());
-    auto last_track = *(++tracks_.rbegin());
+            opt.addKeys((*frame_it)->keys0());
+            frame_it++;
+            track_it++;
+        }
+        opt.addPoints(tracked_points_);
+
+        ceres::Problem problem;
+
+        opt.addReprojectionEdges(problem, K_, tracks_);
+
+        ceres::Solver::Options options;
+        options.max_num_iterations = 100;
+        options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+
+        ceres::Problem::EvaluateOptions evaluate_options;
+        double total_cost = 0.0;
+        std::vector<double> residuals;
+
+        ceres::Solver::Summary summary;
+        ceres::Solve(options, &problem, &summary);
+        problem.Evaluate(evaluate_options, &total_cost, &residuals, nullptr, nullptr);
+        std::cout << "Finial total cost:" << total_cost << "\n";
+
+        Tcw_ = opt.getNewPose();
+        frames_.back()->setTcw(Tcw_);
+        showReporjection();
+    }
 }
 void Tracking::updateTracks()
 {
@@ -81,7 +125,7 @@ void Tracking::updateTracks()
         tracks_.push_back(std::vector<int>());
     }
     std::vector<int> &last_tracks = tracks_.back();
-    std::cout<<tracked_points_.size()<<"   "<< last_tracks.size()<<std::endl;
+    //std::cout<<tracked_points_.size()<<"   "<< last_tracks.size()<<std::endl;
     tracks_.push_back(std::vector<int>(last_tracks.size(), -1));
     std::vector<int> &curr_tracks = tracks_.back();
 
@@ -92,8 +136,10 @@ void Tracking::updateTracks()
 
         int loc = find(last_tracks, last_id);
 
-        if (loc == -1)
+        if (loc == -1 )
         {
+
+//if(frames_.size()==2){
             //new point
             for (auto &t : tracks_)
             {
@@ -102,9 +148,14 @@ void Tracking::updateTracks()
             last_tracks.back() = last_id;
             curr_tracks.back() = curr_id;
             Eigen::Vector3f point3d(0,0,0);
-            last_frame->computePoint3d(last_id, point3d);
+            bool good =last_frame->computePoint3d(last_id, point3d);
+            auto& Tcw = last_frame->Tcw();
+            //auto pose_inv 
+            if(good)
+                point3d = Tcw.inverse()*point3d;
             tracked_points_.push_back(point3d);
             
+//}
         }
         else
         {
@@ -124,22 +175,85 @@ void Tracking::updateTracks()
         {
             for (auto &t : tracks_)
             {
-                t.erase(t.begin() + i);
+                //t.erase(t.begin() + i);
             }
-            tracked_points_.erase(tracked_points_.begin() + i);
+            //tracked_points_.erase(tracked_points_.begin() + i);
             i--;
         }
     }
+    
+}
+void Tracking::showReporjection(){
+    auto frame_it = frames_.rbegin();
+    auto track_it = tracks_.rbegin();
+    int frame_id = frames_.size();
+    while (frame_it != frames_.rend())
+    {
+        float error = 0;
+        int c = 0;
+        auto &Tcw = (*frame_it)->Tcw();
+        auto &key = (*frame_it)->keys0();
+        cv::Mat result_color;
+        cv::cvtColor((*frame_it)->image_, result_color, CV_GRAY2BGR);
+
+
+
+        for (int i = 0; i < (int)tracked_points_.size(); i++)
+        {
+            auto &Pw = tracked_points_[i];
+
+            if (Pw(0) == 0 && Pw(1) == 0 && Pw(2) == 0)
+                continue;
+            int key_id = (*track_it)[i];
+            if (key_id == -1)
+                continue;
+            Eigen::Vector3f local_point = Tcw * Pw;
+            Eigen::Vector3f reprojection_point = K_ * local_point;
+            reprojection_point = reprojection_point / reprojection_point.z();
+            cv::Point loc(reprojection_point.x(), reprojection_point.y());
+            
+                
+                cv::circle(result_color, loc, 2, cv::Scalar(0, 0, 255));
+                cv::circle(result_color, key[key_id], 2, cv::Scalar(0, 255, 0));
+                cv::line(result_color, loc, key[key_id], cv::Scalar(0, 255, 0));
+            
+            double d = sqrt((key[key_id].x - loc.x) * (key[key_id].x - loc.x) + (key[key_id].y - loc.y) * (key[key_id].y - loc.y));
+            error += d;
+            c++;
+            if(d>20)
+                (*track_it)[i] = -1;
+        }
+        printf("frame_%d: Total Reporjection error %f\n",(*frame_it)->id(),error/c);
+        char s[200];
+        sprintf(s,"/home/liu/workspace/visual_slam/build/frame%d.png",(*frame_it)->id());
+        auto ss = std::string(s);
+        cv::imwrite(ss,result_color);
+
+        frame_it++;
+        track_it++;
+
+    }
+
+
 }
 
+const transform::Rigid3f& Tracking::Tcw() const{
+    return Tcw_;
+}
 void Tracking::HandleImage(std::unique_ptr<sensor::MultiImageData> image)
 {
     Frame *current_frame = new Frame(image->image0, image->image1, image->time, kp_frontend_);
+    if(frames_.size() == 2){
+        frames_.pop_back();
+        tracks_.pop_back();
+    }
     frames_.push_back(current_frame);
     updateTracks();
     updatePoses();
-    
+    updatePoses();
 
+
+    
     if(frames_.size() >= 2){
     cv::Mat result_color;
     cv::cvtColor(image->image0, result_color, CV_GRAY2BGR);
@@ -156,6 +270,7 @@ void Tracking::HandleImage(std::unique_ptr<sensor::MultiImageData> image)
         cv::circle(result_color, point, 2, cv::Scalar(0, 255, 0));
         cv::putText(result_color, s, point, cv::FONT_HERSHEY_SCRIPT_SIMPLEX, 1, cv::Scalar(255, 0, 0), 1, 8);
     }
+    
 
     auto frame0 = frames_.begin();
     auto frame1 = std::next(frame0);
@@ -192,6 +307,7 @@ void Tracking::HandleImage(std::unique_ptr<sensor::MultiImageData> image)
     cv::imshow("win", result_color);
     cv::waitKey(1);
     }
+    
 
     if ((int)frames_.size() > max_tracks_)
     {

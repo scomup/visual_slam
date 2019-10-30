@@ -27,20 +27,21 @@ Frame::Frame(const cv::Mat &im0,
 
     // Frame ID
     frame_id_ = next_id_++;
+    im0.copyTo(image_);
 
 }
 
-void Frame::setPose(const transform::Rigid3f &pose)
+void Frame::setTcw(const transform::Rigid3f &Tcw)
 {
-    pose_ = pose;
+    Tcw_ = Tcw;
 }
 
-const transform::Rigid3f& Frame::pose() const
+const transform::Rigid3f& Frame::Tcw() const
 {
-    return pose_;
+    return Tcw_;
 }
 
-bool Frame::computePoint3d(const int left_id, Eigen::Vector3f& point3d) const
+bool Frame::computePoint3d(const int left_id, Eigen::Vector3f& Pw) const
 {
     int minloc = -1;
     double min = 999;
@@ -76,10 +77,10 @@ bool Frame::computePoint3d(const int left_id, Eigen::Vector3f& point3d) const
     float depth = bf_/disparity;
     
     Eigen::Vector3f image_point(left_point.x, left_point.y, 1);
-    point3d = inv_K_ * image_point;
-    point3d /= point3d.z();
-    point3d = point3d * depth;
-    point3d = pose_ * point3d;
+    Eigen::Vector3f Pc = inv_K_ * image_point;
+    Pc /= Pc.z();
+    Pc = Pc * depth;
+    Pw = Tcw_.inverse() * Pc;
     return true;
 }
 

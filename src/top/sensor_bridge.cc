@@ -15,10 +15,10 @@ namespace top
 
 using visual_slam::transform::Rigid3d;
 
-SensorBridge::SensorBridge(std::unique_ptr<core::Slam> slam)
+SensorBridge::SensorBridge(std::shared_ptr<core::Slam> slam)
     : temp_image0_(nullptr),
       temp_image1_(nullptr),
-      slam_(std::move(slam))
+      slam_(slam)
 {}
 
 std::unique_ptr<::visual_slam::sensor::OdometryData> SensorBridge::ToOdometryData(const nav_msgs::Odometry::ConstPtr &msg)

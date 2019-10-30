@@ -32,14 +32,17 @@ public:
 
     static void setFrameParam(const YAML::Node *config);
 
-    void setPose(const transform::Rigid3f& pose);
+    void setTcw(const transform::Rigid3f& Tcw);
 
     bool computePoint3d(const int left_id, Eigen::Vector3f& point3d) const;
+
+    int id()const {return frame_id_;};
     
-    const transform::Rigid3f& pose() const;
+    const transform::Rigid3f& Tcw() const;
     const std::vector<cv::Point>& keys0() const;
     const cv::Mat& desc0() const;
-
+    cv::Mat image_;
+    
 private:
 
     // Frame timestamp.
@@ -54,7 +57,9 @@ private:
 
     static long unsigned int next_id_;
     long unsigned int frame_id_;
-    transform::Rigid3f pose_;
+    transform::Rigid3f Tcw_;
+    
+
     // Number of KeyPoints.
     int N_;
 

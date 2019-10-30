@@ -23,6 +23,10 @@ public:
     
     int TrackStereoCamera(std::unique_ptr<sensor::MultiImageData> image);
 
+    const transform::Rigid3f& Tcw() const;
+
+    
+
 private:
     std::unique_ptr<Tracking> tracking_;
 
