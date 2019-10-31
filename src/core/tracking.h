@@ -32,7 +32,7 @@ public:
 private:
     void updateTracks();
     void updatePoses();
-    void showReporjection();
+    void showReporjection(std::string mark);
 
 
     std::list<Frame*> frames_;

@@ -79,7 +79,7 @@ void Optimizer::addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K,
             continue;
 
         auto curr_track = *(tracks.rbegin());
-        //auto last_track = *(++tracks.rbegin());
+        //auto prev_track = *(++tracks.rbegin());
         int cur_idx = curr_track[i];
         if(cur_idx == -1)
             continue;
