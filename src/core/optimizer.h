@@ -25,10 +25,10 @@ public:
     Optimizer(){};
 
     void addPose(const transform::Rigid3f pose);
-    void addPoints(const std::vector<Eigen::Vector3f>& points);
+    void addPoints(const std::vector<TrackedPoint *>& tps);
     void addKeys(const std::vector<cv::Point>& points);
     void solve();
-    void addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K, std::list<std::vector<int>>& tracks);
+    void addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K);
     transform::Rigid3f getNewPose() const;
 private:
     PoseData FromPose(const transform::Rigid3f &pose);
@@ -37,6 +37,7 @@ private:
     std::vector<PoseData> poses_;
     YAML::Node *config_;
     std::vector<std::array<double, 3>> points_;
+    std::vector<std::vector<int>> tracks_;
     std::vector<std::vector<std::array<double, 2>>> keys_;
 };
 

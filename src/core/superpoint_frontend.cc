@@ -43,7 +43,9 @@ SuperpointFrontend::SuperpointFrontend(const YAML::Node *config)
 
 void SuperpointFrontend::getKeyPoints(const cv::Mat &img, std::vector<cv::Point> &points, cv::Mat &desc)
 {
-    torch::Tensor tensor_img = torch::from_blob(img.data, at::IntList({1, 1, img.rows, img.cols}), at::ScalarType::Byte);
+    cv::Mat input;
+    cv::cvtColor(img, input, CV_BGR2GRAY);
+    torch::Tensor tensor_img = torch::from_blob(input.data, at::IntList({1, 1, img.rows, img.cols}), at::ScalarType::Byte);
     tensor_img = tensor_img.to(at::ScalarType::Float) / 255.;
 
     std::vector<torch::jit::IValue> inputs;
@@ -53,7 +55,7 @@ void SuperpointFrontend::getKeyPoints(const cv::Mat &img, std::vector<cv::Point>
     auto _prob = output->elements()[0].toTensor().to(torch::kCPU);
     auto _coarse_desc = output->elements()[1].toTensor().to(torch::kCPU);
 
-    cv::Mat prob(img.rows, img.cols, CV_32FC1, _prob.data<float>());
+    cv::Mat prob(input.rows, input.cols, CV_32FC1, _prob.data<float>());
 
     std::vector<cv::Rect> boxs;
     std::vector<float> scores;
@@ -64,7 +66,7 @@ void SuperpointFrontend::getKeyPoints(const cv::Mat &img, std::vector<cv::Point>
         {
             if (prob.at<float>(i, j) < conf_thresh_)
                 continue;
-            boxs.push_back(cv::Rect(j - nmx_box_size_ / 2, i - nmx_box_size_ / 2, nmx_box_size_, nmx_box_size_));
+            boxs.push_back(cv::Rect(j , i, nmx_box_size_, nmx_box_size_));
             scores.push_back(prob.at<float>(i, j));
         }
     }
@@ -72,16 +74,16 @@ void SuperpointFrontend::getKeyPoints(const cv::Mat &img, std::vector<cv::Point>
     std::vector<int> indexes;
     cv::dnn::NMSBoxes(boxs, scores, conf_thresh_, 0.4f, indexes);
 
-    cv::Mat draw_img;
-    cv::cvtColor(img, draw_img, cv::COLOR_GRAY2BGR);
+    //cv::Mat draw_img;
+    //cv::cvtColor(img, draw_img, cv::COLOR_GRAY2BGR);
 
     torch::Tensor samp_pts = torch::zeros({1, 1, (int)indexes.size(), 2});
     int samp_idx = 0;
 
     for (auto idx : indexes)
     {
-        float x = (float)boxs[idx].x / prob.cols * 2 - 1.;
-        float y = (float)boxs[idx].y / prob.rows * 2 - 1.;
+        float x = (float)(boxs[idx].x ) / prob.cols * 2 - 1.;
+        float y = (float)(boxs[idx].y ) / prob.rows * 2 - 1.;
 
         samp_pts.data<float>()[samp_idx * 2] = x;
         samp_pts.data<float>()[samp_idx * 2 + 1] = y;
@@ -101,6 +103,16 @@ void SuperpointFrontend::getKeyPoints(const cv::Mat &img, std::vector<cv::Point>
             local_desc.at<float>(l, j) = _desc_a[0][j][0][l];
         }
     }
+    /*
+    cv::Mat temp, rp;
+    for (int i = 0; i <= local_desc.rows - 1; i++)
+    {
+        cv::normalize(local_desc.row(i), temp);
+        rp = local_desc.rowRange(i, i + 1);
+        temp.copyTo(rp);
+    }
+    */
+
     local_desc.copyTo(desc);
 }
 

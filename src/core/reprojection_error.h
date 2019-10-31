@@ -41,7 +41,8 @@ public:
 
         
         const Eigen::Matrix<T, 3, 1> Pc = Tcw * Pw;
-        const Eigen::Matrix<T, 3, 1> reprojection_point = K_.cast<T>() * Pc;
+        const Eigen::Matrix<T, 3, 1> image_point(Pc.x()/Pc.y(),-Pc.z()/Pc.y(),(T)1);
+        const Eigen::Matrix<T, 3, 1> reprojection_point = K_.cast<T>() * image_point;
         T z = reprojection_point.z();
 
         residual[0] = reprojection_point(0)/z - uv[0];

@@ -22,12 +22,12 @@ ros::Publisher pub_pose;
 
 void ImageLCallback(const sensor_msgs::Image::ConstPtr &msg)
 {
-    sensor_bridge->HandleImageMessage("/stereo/left/image_rect", msg);
+    sensor_bridge->HandleImageMessage("/stereo/left/image_rect_color", msg);
 }
 
 void ImageRCallback(const sensor_msgs::Image::ConstPtr &msg)
 {
-    sensor_bridge->HandleImageMessage("/stereo/right/image_rect", msg);
+    sensor_bridge->HandleImageMessage("/stereo/right/image_rect_color", msg);
     auto Tcw = slam_core->Tcw();
     auto Twc = Tcw.inverse();
     geometry_msgs::PoseStamped pose_msg;
@@ -58,8 +58,8 @@ int main(int argc, char **argv)
     slam_core =  std::make_shared<core::Slam>(&config);
     sensor_bridge = new top::SensorBridge(slam_core);
 
-    ros::Subscriber l = nh.subscribe("/stereo/left/image_rect", 1, ImageLCallback);
-    ros::Subscriber r = nh.subscribe("/stereo/right/image_rect", 1, ImageRCallback);
+    ros::Subscriber l = nh.subscribe("/stereo/left/image_rect_color", 1, ImageLCallback);
+    ros::Subscriber r = nh.subscribe("/stereo/right/image_rect_color", 1, ImageRCallback);
     
     pub_pose = nh.advertise<geometry_msgs::PoseStamped>("pose", 1);
 

@@ -1,16 +1,19 @@
 #include "src/core/frame.h"
+#include <boost/format.hpp>
 
 namespace visual_slam
 {
 namespace core
 {
 long unsigned int Frame::next_id_ = 0;
-float Frame::fx_;
-float Frame::fy_;
-float Frame::cx_;
-float Frame::cy_;
-float Frame::bf_;
-Eigen::Matrix3f Frame::inv_K_;
+
+//float Frame::fx_;
+//float Frame::fy_;
+//float Frame::cx_;
+//float Frame::cy_;
+//float Frame::bf_;
+//float Frame::nn_thresh_;
+//Eigen::Matrix3f Frame::inv_K_;
 
 
 // Constructor for stereo cameras.
@@ -23,11 +26,13 @@ Frame::Frame(const cv::Mat &im0,
 {
     kp_frondend->getKeyPoints(im0, keys0_, desc0_);
     kp_frondend->getKeyPoints(im1, keys1_, desc1_);
-
+    tps_.resize(keys0_.size());
+    std::fill(tps_.begin(), tps_.end(), nullptr);
 
     // Frame ID
     frame_id_ = next_id_++;
     im0.copyTo(image_);
+    Tcw_ = transform::Rigid3f();
 
 }
 
@@ -40,6 +45,12 @@ const transform::Rigid3f& Frame::Tcw() const
 {
     return Tcw_;
 }
+
+std::vector<TrackedPoint *>& Frame::tps()
+{
+    return tps_;
+}
+/*
 
 bool Frame::computePoint3d(const int left_id, Eigen::Vector3f& Pw) const
 {
@@ -77,15 +88,14 @@ bool Frame::computePoint3d(const int left_id, Eigen::Vector3f& Pw) const
     float depth = bf_/disparity;
     
     Eigen::Vector3f image_point(left_point.x, left_point.y, 1);
-    Eigen::Vector3f Pc = inv_K_ * image_point;
-    Pc /= Pc.z();
+    image_point = inv_K_ * image_point;
+    Eigen::Vector3f Pc(image_point.x()/image_point.z(),1,-image_point.y()/image_point.z());
     Pc = Pc * depth;
     Pw = Tcw_.inverse() * Pc;
     return true;
-}
+}*/
 
-
-
+/*
 void Frame::setFrameParam(const YAML::Node *config)
 {
     fx_ = (*config)["camera"]["fx"].as<float>();
@@ -93,6 +103,7 @@ void Frame::setFrameParam(const YAML::Node *config)
     cx_ = (*config)["camera"]["cx"].as<float>();
     cy_ = (*config)["camera"]["cy"].as<float>();
     bf_ = (*config)["camera"]["baseline"].as<float>() * fx_;
+    nn_thresh_ = (*config)["superpoint"]["nn_thresh"].as<float>();
     inv_K_ = Eigen::Matrix3f::Identity();
     inv_K_(0, 0) = fx_;
     inv_K_(1, 1) = fy_;
@@ -101,7 +112,7 @@ void Frame::setFrameParam(const YAML::Node *config)
     inv_K_ = inv_K_.inverse().eval();
 
 }
-
+*/
 const std::vector<cv::Point> &Frame::keys0() const
 {
     return keys0_;
@@ -111,6 +122,17 @@ const cv::Mat &Frame::desc0() const
 {
     return desc0_;
 }
+
+const std::vector<cv::Point> &Frame::keys1() const
+{
+    return keys1_;
+}
+
+const cv::Mat &Frame::desc1() const
+{
+    return desc1_;
+}
+
 
 } // namespace core
 } // namespace visual_slam

@@ -36,7 +36,7 @@ std::unique_ptr<sensor::ImageData> SensorBridge::ToImageData(const sensor_msgs::
   cv_bridge::CvImageConstPtr cv_ptr;
   try
   {
-    cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
+    cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::BGR8);
   }
   catch (cv_bridge::Exception &e)
   {
@@ -46,7 +46,7 @@ std::unique_ptr<sensor::ImageData> SensorBridge::ToImageData(const sensor_msgs::
   cv::Mat img;
   cv_ptr->image.copyTo(img);
 
-  cv::resize(img,img,cv::Size(640,400));
+  //cv::resize(img,img,cv::Size(640,400));
 
   return common::make_unique<sensor::ImageData>(sensor::ImageData{time, img});
 
@@ -56,11 +56,11 @@ return nullptr;
 
 void SensorBridge::HandleImageMessage(const std::string& msg_id, const sensor_msgs::Image::ConstPtr& msg)
 {
-  if (msg_id == "/stereo/left/image_rect")
+  if (msg_id == "/stereo/left/image_rect_color")
   {
     temp_image0_ = std::move(ToImageData(msg));
   }
-  else if (msg_id == "/stereo/right/image_rect")
+  else if (msg_id == "/stereo/right/image_rect_color")
   {
     temp_image1_ = std::move(ToImageData(msg));
   }

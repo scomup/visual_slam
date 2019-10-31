@@ -6,6 +6,7 @@
 #include <opencv2/opencv.hpp>
 #include"src/core/superpoint_frontend.h"
 #include"src/transform/rigid_transform.h"
+#include"src/core/tracked_point.h"
 
 namespace visual_slam{
 namespace core{
@@ -34,13 +35,16 @@ public:
 
     void setTcw(const transform::Rigid3f& Tcw);
 
-    bool computePoint3d(const int left_id, Eigen::Vector3f& point3d) const;
 
     int id()const {return frame_id_;};
     
     const transform::Rigid3f& Tcw() const;
     const std::vector<cv::Point>& keys0() const;
     const cv::Mat& desc0() const;
+    const std::vector<cv::Point>& keys1() const;
+    const cv::Mat& desc1() const;
+    std::vector<TrackedPoint*>& tps();
+
     cv::Mat image_;
     
 private:
@@ -48,32 +52,23 @@ private:
     // Frame timestamp.
     double stamp_;
 
-    static float fx_;
-    static float fy_;
-    static float cx_;
-    static float cy_;
-    static float bf_;
-    static Eigen::Matrix3f inv_K_;
+    //static float fx_;
+    //static float fy_;
+    //static float cx_;
+    //static float cy_;
+    //static float bf_;
+    //static float nn_thresh_;
+    //static Eigen::Matrix3f inv_K_;
 
     static long unsigned int next_id_;
     long unsigned int frame_id_;
     transform::Rigid3f Tcw_;
-    
 
-    // Number of KeyPoints.
-    int N_;
-
-    // Vector of keypoints (original for visualization) and undistorted (actually used by the system).
-    // In the stereo case, mvKeysUn is redundant as images must be rectified.
-    // In the RGB-D case, RGB images can be distorted.
     std::vector<cv::Point> keys0_, keys1_;
     std::vector<float> depth_;
-
-
-    // ORB descriptor, each row associated to a keypoint.
+    std::vector<TrackedPoint*> tps_;
     cv::Mat desc0_; 
     cv::Mat desc1_;
-
     SuperpointFrontend *kp_frondend_;
 
 

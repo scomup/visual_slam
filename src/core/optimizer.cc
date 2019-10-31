@@ -19,10 +19,18 @@ void Optimizer::addPose(const transform::Rigid3f pose)
     poses_.emplace_back(FromPose(pose));
 }
 
-void Optimizer::addPoints(const std::vector<Eigen::Vector3f> &points)
+void Optimizer::addPoints(const std::vector<TrackedPoint *>& tps)
 {
-    for (auto p : points)
-        points_.push_back({p.x(), p.y(), p.z()});
+    std::vector< int > t;
+    for (int i = 0; i< (int)tps.size(); i++)
+    {
+        auto& p = tps[i];
+        if(p== nullptr)
+            continue;
+        points_.push_back({p->Pw.x(), p->Pw.y(), p->Pw.z()});
+        t.push_back(i);
+    }
+    tracks_.push_back(t);
 }
 
 void Optimizer::addKeys(const std::vector<cv::Point> &points)
@@ -56,11 +64,9 @@ transform::Rigid3f Optimizer::getNewPose() const
                   Eigen::Quaternionf(pose.rotation[0], pose.rotation[1], pose.rotation[2], pose.rotation[3]));
 
 }
-void Optimizer::addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K, std::list<std::vector<int>> &tracks)
+void Optimizer::addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K)
 {
-    printf("hereh!\n");
-    if (tracks.size() < 2)
-        return;
+
     Eigen::Matrix2f information;
     information << 1, 0, 0, 1;
 
@@ -68,19 +74,15 @@ void Optimizer::addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K,
     cost_function = ReprojectionError::Create(information, K);
 
     auto& pose = poses_.back();
-    
-    auto &keys = keys_.back();
+    auto& keys = keys_.back();
+    auto& track = tracks_.back();
+
     auto param = common::make_unique<ceres::QuaternionParameterization>();
     for (size_t i = 0; i < points_.size() - 1; i++)
     {
         auto &point3d = points_[i];
 
-        if(point3d[0] == 0 && point3d[1]==0 && point3d[2]==0)
-            continue;
-
-        auto curr_track = *(tracks.rbegin());
-        //auto prev_track = *(++tracks.rbegin());
-        int cur_idx = curr_track[i];
+        int cur_idx = track[i];
         if(cur_idx == -1)
             continue;
         std::array<double, 2>& uv = keys[cur_idx];

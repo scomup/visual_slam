@@ -30,9 +30,10 @@ public:
     const transform::Rigid3f& Tcw() const;
 
 private:
-    void updateTracks();
-    void updatePoses();
+    void trackingByReferenceFrame(Frame* frame);
+    void updatePoseByReferenceFrame(Frame* frame);
     void showReporjection(std::string mark);
+    void createTrackedPointsbyStereo(Frame* frame);
 
 
     std::list<Frame*> frames_;
@@ -40,9 +41,18 @@ private:
     const YAML::Node* config_;
     const int max_tracks_;
     Eigen::Matrix3f K_;
+    Eigen::Matrix3f inv_K_;
+
+    float fx_;
+    float fy_;
+    float cx_;
+    float cy_;
+    float bf_;
+    float nn_thresh_;
 
     std::list<std::vector<int>> tracks_;
     std::vector<Eigen::Vector3f> tracked_points_;
+    std::list<TrackedPoint*> tps_;
     transform::Rigid3f Tcw_;
 
 };
