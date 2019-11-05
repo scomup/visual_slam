@@ -1,13 +1,18 @@
 superpoint:
   module_path: "/home/liu/catkin_ws/src/visual_odometry/weight/superpoint.pt"
   conf_thresh: 0.015
-  nn_thresh: 1.7
-  nmx_box_size: 8
+  nn_thresh: 1
+  nmx_box_size: 4
 camera:
     fx: 339.872425
     fy: 340.441941
     cx: 344.795123
     cy: 195.057794
+    #fx: 170
+    #fy: 170
+    #cx: 172
+    #cy: 97.5
+
     baseline: 0.12
 tracking:
   max_tracks: 6

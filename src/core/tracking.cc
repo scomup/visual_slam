@@ -63,34 +63,93 @@ void Tracking::HandleOdometry(std::unique_ptr<sensor::OdometryData> odom)
 {
 }
 
-void Tracking::updatePoseByReferenceFrame(Frame *frame)
+int Tracking::updatePoseByReferenceFrame(Frame *frame)
 {
     Frame *ref_frame = frames_.back();
     Optimizer opt;
     //Set new frame to the same pose as the reference frame.
-    frame->setTcw(ref_frame->Tcw());
+    frame->setTcw(frames_.back()->Tcw());
 
     auto frame_it = frames_.begin();
     auto track_it = tracks_.begin();
 
-    opt.addPose(frame->Tcw());
-    opt.addKeys(frame->keys0());
-    opt.addPoints(frame->tps());
+    int frame_id = 0;
+
+    /*
+    opt.setFrameNum(frames_.size()+1);
+    for (auto &ref_frame : frames_)
+    {
+        opt.addPose(frame_id, ref_frame->Tcw());
+        opt.addKeys(frame_id, ref_frame->keys0());
+        opt.addPoints(frame_id, ref_frame->tps());
+        frame_id++;
+    }
+    opt.addPose(frame_id, frame->Tcw());
+    opt.addKeys(frame_id, frame->keys0());
+    opt.addPoints(frame_id, frame->tps());
+    */
+   opt.setFrameNum(2);
+    opt.addPose(0, ref_frame->Tcw());
+    opt.addKeys(0, ref_frame->keys0());
+    opt.addPoints(0, ref_frame->tps());
+
+    opt.addPose(1, frame->Tcw());
+    opt.addKeys(1, frame->keys0());
+    opt.addPoints(1, frame->tps());
+
 
     ceres::Problem problem;
     opt.addReprojectionEdges(problem, K_);
     ceres::Solver::Options options;
-    options.max_num_iterations = 100;
+    options.max_num_iterations = 10;
     options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
     ceres::Problem::EvaluateOptions evaluate_options;
     double total_cost = 0.0;
     std::vector<double> residuals;
     ceres::Solver::Summary summary;
+    //problem.Evaluate(evaluate_options, &total_cost, &residuals, nullptr, nullptr);
+    //std::cout << "Begin total cost:" << total_cost << "\n";
+
+
     ceres::Solve(options, &problem, &summary);
-    problem.Evaluate(evaluate_options, &total_cost, &residuals, nullptr, nullptr);
-    std::cout << "Finial total cost:" << total_cost << "\n";
+    //problem.Evaluate(evaluate_options, &total_cost, &residuals, nullptr, nullptr);
+    //std::cout << "Finial total cost:" << total_cost << "\n";
     Tcw_ = opt.getNewPose();
-    //frame->setTcw(Tcw_);
+
+    auto&frame_tps = frame->tps();
+    int num = 0;
+    for (int i = 0; i < (int)frame_tps.size(); i++)
+    {
+        auto& p = frame_tps[i];
+        if(p== nullptr)
+            continue;
+
+        auto &Pw = p->Pw;
+
+        int key_id = i;
+        auto loc_o = frame->keys0()[i];
+        Eigen::Vector3f Pc = Tcw_ * Pw;
+        Eigen::Vector3f image_point(Pc.x() / Pc.y(), -Pc.z() / Pc.y(), 1);
+        Eigen::Vector3f reprojection_point = K_ * image_point;
+        reprojection_point = reprojection_point / reprojection_point.z();
+        cv::Point loc_r(reprojection_point.x(), reprojection_point.y());
+
+        double d = sqrt((loc_o.x - loc_r.x) * (loc_o.x - loc_r.x) + (loc_o.y - loc_r.y) * (loc_o.y - loc_r.y));
+        if(d>20)
+        {
+            //auto it = std::find(p->frames.begin(), p->frames.end(), std::make_pair(frame,i));
+            //p->frames.erase(it);
+            frame_tps[i] = nullptr;
+        }
+        num++;
+            
+    }
+    if(num < 10){
+        //std::cout<<"tracking failed!"<<num<<std::endl;
+        return num;
+    }
+    frame->setTcw(Tcw_);
+    return num;
 }
 
 void Tracking::trackingByReferenceFrame(Frame* frame)
@@ -107,15 +166,7 @@ void Tracking::trackingByReferenceFrame(Frame* frame)
 
     auto matches = kp_frontend_->twoWayMatching(ref_keys, ref_desc, cur_keys, cur_desc);
 
-    /*
-    if (tracks_.size() == 0)
-    {
-        tracks_.push_back(std::vector<int>());
-    }
-    std::vector<int> &prev_tracks = tracks_.back();
-    tracks_.push_back(std::vector<int>(prev_tracks.size(), -1));
-    std::vector<int> &curr_tracks = tracks_.back();
-    */
+    //find same tracked_points with reference frame.
     for (int i = 0; i < (int)matches.size(); i++)
     {
         int ref_id = std::get<0>(matches[i]);
@@ -124,10 +175,118 @@ void Tracking::trackingByReferenceFrame(Frame* frame)
         auto tp = ref_tps[ref_id];
         if(tp != nullptr)
         {
-            tp->frames.emplace_back(frame, cur_id);
+            //tp->frames.emplace_back(frame, cur_id);
             cur_tps[cur_id] = tp;
         }
     }
+    int tracked_num;
+    //update pose.
+    tracked_num = updatePoseByReferenceFrame(frame);
+    //remove outliers and update again.
+    tracked_num = updatePoseByReferenceFrame(frame);
+
+
+    for (int i = 0; i < (int)matches.size(); i++)
+    {
+        int ref_id = std::get<0>(matches[i]);
+        int cur_id = std::get<1>(matches[i]);
+
+        auto tp = ref_tps[ref_id];
+        if(tp == nullptr)
+        {
+            //continue;
+            //tp->frames.emplace_back(frame, cur_id);
+            //cur_tps[cur_id] = tp;
+
+            auto& cur_key = cur_keys[cur_id];
+            auto& ref_key = ref_keys[ref_id];
+
+            // Check parallax between rays
+            const float invfx = 1.0f / fx_;
+            const float invfy = 1.0f / fy_;
+            
+            auto& Tcw1 = frame->Tcw();
+            auto& Tcw2 = ref_frame->Tcw();
+            Eigen::Vector3f xn1((cur_key.x - cx_) * invfx, 1.0, -(cur_key.y - cy_) * invfy);
+            //Eigen::Vector3f xn1((cur_key.x - cx_) * invfx, (cur_key.y - cy_) * invfy, 1);
+            Eigen::Vector3f ray1 = Tcw1.rotation().inverse() * xn1;
+
+            Eigen::Vector3f xn2((ref_key.x - cx_) * invfx, 1.0, -(ref_key.y - cy_) * invfy);
+            //Eigen::Vector3f xn2((ref_key.x - cx_) * invfx, (ref_key.y - cy_) * invfy, 1);
+            Eigen::Vector3f ray2 = Tcw2.rotation().inverse() * xn2;
+
+            const float cosParallaxRays = ray1.dot(ray2) / (ray1.norm() * ray2.norm());
+
+            if (cosParallaxRays < 0 || cosParallaxRays > 0.999)
+                continue;
+
+            // Linear Triangulation Method
+            Eigen::Matrix4f A;
+            
+
+            Eigen::Matrix4f M1 = Eigen::Matrix4f::Identity();
+            M1.block(0,0,3,3) = Tcw1.rotation().normalized().toRotationMatrix();
+            M1.block(0,3,3,1) = Tcw1.translation();
+            Eigen::Matrix4f M2 = Eigen::Matrix4f::Identity();
+            M2.block(0,0,3,3) = Tcw2.rotation().normalized().toRotationMatrix();
+            M2.block(0,3,3,1) = Tcw2.translation();
+
+            A.row(0) = xn1(0) * M1.row(1) - M1.row(0);
+            A.row(1) = xn1(2) * M1.row(1) - M1.row(2);
+            A.row(2) = xn2(0) * M2.row(1) - M2.row(0);
+            A.row(3) = xn2(2) * M2.row(1) - M2.row(2);
+
+            Eigen::JacobiSVD<Eigen::Matrix4f> svd( A, Eigen::ComputeFullV | Eigen::ComputeFullU );
+            Eigen::Vector4f x3D = svd.matrixV().col(3);
+
+             if (x3D(3) == 0)
+                continue;
+
+            x3D = x3D / x3D(3);
+            Eigen::Vector3f Pw(x3D(0),x3D(1),x3D(2));
+            Eigen::Vector3f Pc1 = Tcw1 * Pw;
+            if(Pc1.y() <= 0.2)
+                continue;
+            Eigen::Vector3f Pc2 = Tcw2 * Pw;
+            if(Pc2.y() <= 0.2)
+                continue;
+            TrackedPoint* tp = new TrackedPoint;
+            tp->Pw = Pw;
+            tp->frames.emplace_back(ref_frame, ref_id);
+
+            cur_tps[cur_id] = tp;
+            ref_frame->tps()[ref_id] = tp;
+            //tps_.push_back(tp);
+            tracked_num ++;
+
+            /*
+            {
+                Eigen::Vector3f Pc = Tcw1 * Pw;
+                Eigen::Vector3f image_point(Pc.x() / Pc.y(), -Pc.z() / Pc.y(), 1);
+                Eigen::Vector3f reprojection_point = K_ * image_point;
+                reprojection_point = reprojection_point / reprojection_point.z();
+                cv::Point loc(reprojection_point.x(), reprojection_point.y());
+                std::cout << loc << std::endl;
+                std::cout << cur_key << std::endl;
+            }
+            {
+                Eigen::Vector3f Pc = Tcw2 * Pw;
+                Eigen::Vector3f image_point(Pc.x() / Pc.y(), -Pc.z() / Pc.y(), 1);
+                Eigen::Vector3f reprojection_point = K_ * image_point;
+                reprojection_point = reprojection_point / reprojection_point.z();
+                cv::Point loc(reprojection_point.x(), reprojection_point.y());
+                std::cout << loc << std::endl;
+                std::cout << ref_key << std::endl;
+            }
+            */
+            
+
+
+
+        }
+        //std::cout<<"tracked num: "<<tracked_num<<std::endl;
+    }
+
         
 
 /*
@@ -191,7 +350,9 @@ void Tracking::showReporjection(std::string mark){
         auto &Tcw = (*frame_it)->Tcw();
         auto &key = (*frame_it)->keys0();
         cv::Mat result_color;
-        (*frame_it)->image_.copyTo(result_color);
+        //(*frame_it)->image_.copyTo(result_color);
+        cv::cvtColor((*frame_it)->image_, result_color, cv::COLOR_GRAY2BGR);
+
 
 
 
@@ -264,6 +425,28 @@ void Tracking::HandleImage(std::unique_ptr<sensor::MultiImageData> image)
     //find same tracked point in current_frame.
     trackingByReferenceFrame(current_frame);
 
+
+    {
+        auto &ref_frame = *(frames_.rbegin());
+
+        auto &Tcw1 = current_frame->Tcw();
+        auto &Tcw2 = ref_frame->Tcw();
+        
+        float diff_rotation = Eigen::AngleAxisf(Tcw1.rotation() * Tcw2.rotation()).angle();
+        float diff_translation = (Tcw1.translation() - Tcw2.translation()).norm();
+        //std::cout<<"diff_rotation:"<<diff_rotation<<std::endl;
+        //std::cout<<"diff_translation:"<<diff_translation<<std::endl;
+        if (diff_translation > 0.05 || diff_rotation > 180. / M_PI * 5.)
+        {
+            std::cout<<"new key frame("<<current_frame->id()<<").\n";
+            //createTrackedPointsbyStereo(current_frame);
+            //trackingByReferenceFrame(current_frame);
+            //frames_.push_back(current_frame);
+        }
+    }
+    
+
+    /*
     //printf("%d %d\n", tps_.size(),tp_num);
     {
         cv::Mat result_color;
@@ -290,29 +473,31 @@ void Tracking::HandleImage(std::unique_ptr<sensor::MultiImageData> image)
         }
         cv::imshow("before", result_color);
     }
-    updatePoseByReferenceFrame(current_frame);
+    */
+    
       //printf("%d %d\n", tps_.size(),tp_num);
     {
+        //auto &ref_frame = *(frames_.rbegin());
         cv::Mat result_color;
-        current_frame->image_.copyTo(result_color);
+        //current_frame->image_.copyTo(result_color);
+        cv::cvtColor(current_frame->image_, result_color, cv::COLOR_GRAY2BGR);
         auto &keys0 = current_frame->keys0();
-
-        for (auto &tp : current_frame->tps())
+        auto& frame_tps = current_frame->tps();
+        for (int i = 0; i < (int)frame_tps.size(); i++)
         {
-            if (tp == nullptr)
+            if (frame_tps[i] == nullptr)
                 continue;
-            auto &Pw = tp->Pw;
+            auto &Pw = frame_tps[i]->Pw;
 
-            int key_id = tp->frames.back().second;
-            Eigen::Vector3f Pc = Tcw_ * Pw;
+            Eigen::Vector3f Pc = current_frame->Tcw() * Pw;
             Eigen::Vector3f image_point(Pc.x() / Pc.y(), -Pc.z() / Pc.y(), 1);
             Eigen::Vector3f reprojection_point = inv_K_.inverse() * image_point;
             reprojection_point = reprojection_point / reprojection_point.z();
             cv::Point loc(reprojection_point.x(), reprojection_point.y());
 
             cv::circle(result_color, loc, 3, cv::Scalar(0, 0, 255));
-            cv::circle(result_color, keys0[key_id], 3, cv::Scalar(0, 255, 0));
-            cv::line(result_color, loc, keys0[key_id], cv::Scalar(0, 255, 0));
+            cv::circle(result_color, keys0[i], 3, cv::Scalar(0, 255, 0));
+            cv::line(result_color, loc, keys0[i], cv::Scalar(0, 255, 0));
             cv::putText(result_color, (boost::format("%3.1f") % Pc.y()).str(), loc, cv::FONT_HERSHEY_SCRIPT_SIMPLEX, 1, cv::Scalar(255, 0, 0), 1, 8);
         }
         cv::imshow("after", result_color);
@@ -408,43 +593,65 @@ void Tracking::createTrackedPointsbyStereo(Frame* frame){
     auto &keys1 = frame->keys1();
     auto &desc1 = frame->desc1();
     auto &frame_tps = frame->tps();
-    auto matches = kp_frontend_->getStereoMatching(keys0, desc0, keys1, desc1);
+    
+    //auto matches = kp_frontend_->getStereoMatching(keys0, desc0, keys1, desc1);
+    auto matches = kp_frontend_->twoWayMatching(keys0, desc0, keys1, desc1);
+
 
     for (int i = 0; i < (int)matches.size(); i++)
     {
         int ref_id = std::get<0>(matches[i]);
         int cur_id = std::get<1>(matches[i]);
 
-        auto &left_point = keys0[ref_id];
-        auto &right_point = keys1[cur_id];
 
-        //check in same line
-        if(std::abs(left_point.y - right_point.y)>20)
-            continue;
-
-        float disparity = left_point.x - right_point.x;
-
-        //check disparity
-        if (disparity <= 1)
+        if (frame_tps[ref_id] == nullptr)
         {
-            continue;
+
+            auto &left_point = keys0[ref_id];
+            auto &right_point = keys1[cur_id];
+
+            //check in same line
+            if (std::abs(left_point.y - right_point.y) > 20)
+                continue;
+
+            float disparity = left_point.x - right_point.x;
+
+            //check disparity
+            if (disparity <= 1)
+            {
+                continue;
+            }
+
+            float depth = bf_ / disparity;
+
+            Eigen::Vector3f image_point(left_point.x, left_point.y, 1);
+            image_point = inv_K_ * image_point;
+            Eigen::Vector3f Pc(image_point.x() / image_point.z(), 1, -image_point.y() / image_point.z());
+            Pc = Pc * depth;
+            Eigen::Vector3f Pw = Tcw_.inverse() * Pc;
+
+            TrackedPoint *tp = new TrackedPoint;
+            tp->Pw = Pw;
+            tp->frames.emplace_back(frame, ref_id);
+
+            frame_tps[ref_id] = tp;
+            //tps_.push_back(tp);
         }
+        else{
+            auto& tp = frame_tps[ref_id];
+            {
+                //Eigen::Vector3f Pc = frame->Tcw() * tp->Pw;
+                //Eigen::Vector3f image_point(Pc.x() / Pc.y(), -Pc.z() / Pc.y(), 1);
+                //Eigen::Vector3f reprojection_point = K_ * image_point;
+                //reprojection_point = reprojection_point / reprojection_point.z();
+                //cv::Point loc(reprojection_point.x(), reprojection_point.y());
+                //std::cout << loc << std::endl;
+                //std::cout << keys0[ref_id] << std::endl;
+                tp->frames.emplace_back(frame, ref_id);
+            }
 
-        float depth = bf_ / disparity;
-
-        Eigen::Vector3f image_point(left_point.x, left_point.y, 1);
-        image_point = inv_K_ * image_point;
-        Eigen::Vector3f Pc(image_point.x() / image_point.z(), 1, -image_point.y() / image_point.z());
-        Pc = Pc * depth;
-        Eigen::Vector3f  Pw = Tcw_.inverse() * Pc;
-
-
-        TrackedPoint* tp = new TrackedPoint;
-        tp->Pw = Pw;
-        tp->frames.emplace_back(frame, i);
-
-        frame_tps[ref_id] = tp;
-        tps_.push_back(tp);
+    
+        }
     }
     /*
 

@@ -31,7 +31,7 @@ public:
 
 private:
     void trackingByReferenceFrame(Frame* frame);
-    void updatePoseByReferenceFrame(Frame* frame);
+    int updatePoseByReferenceFrame(Frame* frame);
     void showReporjection(std::string mark);
     void createTrackedPointsbyStereo(Frame* frame);
 

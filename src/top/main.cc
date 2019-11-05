@@ -11,6 +11,8 @@
 #include "geometry_msgs/PoseStamped.h"
 
 
+ros::Publisher pub_pose;
+
 
 #if 1
 using namespace visual_slam;
@@ -18,16 +20,15 @@ using namespace visual_slam;
 top::SensorBridge *sensor_bridge;
 std::shared_ptr<core::Slam> slam_core;
 
-ros::Publisher pub_pose;
 
 void ImageLCallback(const sensor_msgs::Image::ConstPtr &msg)
 {
-    sensor_bridge->HandleImageMessage("/stereo/left/image_rect_color", msg);
+    sensor_bridge->HandleImageMessage("/stereo/left/image_rect", msg);
 }
 
 void ImageRCallback(const sensor_msgs::Image::ConstPtr &msg)
 {
-    sensor_bridge->HandleImageMessage("/stereo/right/image_rect_color", msg);
+    sensor_bridge->HandleImageMessage("/stereo/right/image_rect", msg);
     auto Tcw = slam_core->Tcw();
     auto Twc = Tcw.inverse();
     geometry_msgs::PoseStamped pose_msg;
@@ -58,8 +59,8 @@ int main(int argc, char **argv)
     slam_core =  std::make_shared<core::Slam>(&config);
     sensor_bridge = new top::SensorBridge(slam_core);
 
-    ros::Subscriber l = nh.subscribe("/stereo/left/image_rect_color", 1, ImageLCallback);
-    ros::Subscriber r = nh.subscribe("/stereo/right/image_rect_color", 1, ImageRCallback);
+    ros::Subscriber l = nh.subscribe("/stereo/left/image_rect", 1, ImageLCallback);
+    ros::Subscriber r = nh.subscribe("/stereo/right/image_rect", 1, ImageRCallback);
     
     pub_pose = nh.advertise<geometry_msgs::PoseStamped>("pose", 1);
 
@@ -76,6 +77,8 @@ int main(int argc, char **argv)
 {
     ::ros::init(argc, argv, "visual_slam");
     ::ros::start();
+    ros::NodeHandle nh;
+    pub_pose = nh.advertise<geometry_msgs::PoseStamped>("pose", 1);
 
     std::string filename_in;
 
@@ -97,9 +100,9 @@ int main(int argc, char **argv)
 
     YAML::Node config = YAML::LoadFile("/home/liu/workspace/visual_slam/config/config.yaml");
 
-    std::unique_ptr<core::Slam> slam_core =
-        common::make_unique<core::Slam>(&config);
-    top::SensorBridge bridge(std::move(slam_core));
+    std::shared_ptr<core::Slam> slam_core;
+    slam_core =  std::make_shared<core::Slam>(&config);
+    top::SensorBridge bridge(slam_core);
 
     int c=0;
     while (playable_bag_multiplexer.IsMessageAvailable())
@@ -120,6 +123,24 @@ int main(int argc, char **argv)
         {
             std::string topic = std::string(msg.getTopic());
             bridge.HandleImageMessage(topic, msg.instantiate<sensor_msgs::Image>());
+            if (topic == std::string("/stereo/right/image_rect"))
+            {
+                auto Tcw = slam_core->Tcw();
+                auto Twc = Tcw.inverse();
+                geometry_msgs::PoseStamped pose_msg;
+                pose_msg.header.frame_id = "map";
+                pose_msg.header.stamp = ros::Time::now();
+
+                pose_msg.pose.position.x = Twc.translation().x();
+                pose_msg.pose.position.y = Twc.translation().y();
+                pose_msg.pose.position.z = Twc.translation().z();
+                pose_msg.pose.orientation.x = Twc.rotation().x();
+                pose_msg.pose.orientation.y = Twc.rotation().y();
+                pose_msg.pose.orientation.z = Twc.rotation().z();
+                pose_msg.pose.orientation.w = Twc.rotation().w();
+                pub_pose.publish(pose_msg);
+                ros::spinOnce();
+            }
         }
 
         if (msg.isType<nav_msgs::Odometry>())

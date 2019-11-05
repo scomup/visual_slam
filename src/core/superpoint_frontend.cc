@@ -43,8 +43,8 @@ SuperpointFrontend::SuperpointFrontend(const YAML::Node *config)
 
 void SuperpointFrontend::getKeyPoints(const cv::Mat &img, std::vector<cv::Point> &points, cv::Mat &desc)
 {
-    cv::Mat input;
-    cv::cvtColor(img, input, CV_BGR2GRAY);
+    cv::Mat input = img;
+    //cv::cvtColor(img, input, CV_BGR2GRAY);
     torch::Tensor tensor_img = torch::from_blob(input.data, at::IntList({1, 1, img.rows, img.cols}), at::ScalarType::Byte);
     tensor_img = tensor_img.to(at::ScalarType::Float) / 255.;
 
@@ -103,7 +103,7 @@ void SuperpointFrontend::getKeyPoints(const cv::Mat &img, std::vector<cv::Point>
             local_desc.at<float>(l, j) = _desc_a[0][j][0][l];
         }
     }
-    /*
+    
     cv::Mat temp, rp;
     for (int i = 0; i <= local_desc.rows - 1; i++)
     {
@@ -111,7 +111,7 @@ void SuperpointFrontend::getKeyPoints(const cv::Mat &img, std::vector<cv::Point>
         rp = local_desc.rowRange(i, i + 1);
         temp.copyTo(rp);
     }
-    */
+    
 
     local_desc.copyTo(desc);
 }
