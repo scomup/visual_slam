@@ -17,6 +17,18 @@ void Optimizer::setFrameNum(const int n)
     frames_num_ = n;
 }
 
+void Optimizer::resetTps()
+{
+    for (auto m : check_points_)
+    {
+        auto &tp = m.first;
+        auto id = m.second;
+        tp->Pw.x() = points_[id][0];
+        tp->Pw.y() = points_[id][1];
+        tp->Pw.z() = points_[id][2];
+    }
+}
+
 void Optimizer::addPose(const int frame_id, const transform::Rigid3f pose)
 {
     poses_.emplace_back(FromPose(pose));
@@ -95,11 +107,10 @@ void Optimizer::addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K)
     auto param = common::make_unique<ceres::QuaternionParameterization>();
 
     ceres::CostFunction *cost_pose;
-    cost_pose = PoseError::Create(100, 100);
-
+    cost_pose = PoseError::Create(1, 1);
+/*
     for (size_t i = 0; i < poses_.size() - 1; i++)
     {
-        /*
         problem.AddParameterBlock(poses_[i].translation.data(), 3);
         problem.AddParameterBlock(poses_[i].rotation.data(), 4, param.release());
         problem.AddParameterBlock(poses_[i+1].translation.data(), 3);
@@ -110,17 +121,18 @@ void Optimizer::addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K)
                                  poses_[i].rotation.data(),
                                  poses_[i+1].translation.data(),
                                  poses_[i+1].rotation.data());
-                                 */
     }
-
+*/
     ceres::CostFunction *cost_function;
     cost_function = ReprojectionError::Create(information, K);
 
     for (size_t i = 0; i < tracks_.size(); i++)//for each tracked point
     {//i 
+        auto &point3d = points_[i];
+        problem.AddParameterBlock(point3d.data(), 3);
+        problem.SetParameterBlockConstant(reinterpret_cast<double *>(point3d.data()));
         for (size_t j = 0; j < frames_num_; j++)//for each frame 
         {
-            auto &point3d = points_[i];
             int key_id = tracks_[i][j];
             if (key_id == -1)
                 continue;
@@ -136,7 +148,6 @@ void Optimizer::addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K)
                                      poses_[j].translation.data(),
                                      poses_[j].rotation.data());
             problem.SetParameterBlockConstant(reinterpret_cast<double *>(uv.data()));
-            //problem.SetParameterBlockConstant(reinterpret_cast<double *>(point3d.data()));
         }
     }
 }

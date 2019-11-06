@@ -31,6 +31,7 @@ public:
     void addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K);
     transform::Rigid3f getNewPose() const;
     void setFrameNum(const int n);
+    void resetTps();
 
 private:
     PoseData FromPose(const transform::Rigid3f &pose);

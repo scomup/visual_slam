@@ -82,20 +82,22 @@ public:
             Eigen::Map<const Eigen::Matrix<T, 3, 1>>(translation1),
             Eigen::Quaternion<T>(rotation1[0], rotation1[1], rotation1[2],
                                  rotation1[3]));
-        const Eigen::Quaternion<T> r = Tcw0.rotation() * Tcw1.rotation();
+        const Eigen::Quaternion<T> diff_rotation = Tcw0.rotation() * Tcw1.rotation();
+        const Eigen::Matrix<T, 3, 1> diff_translation = Tcw0.translation() - Tcw1.translation();
 
-        T diff_translation = (Tcw0.translation() - Tcw1.translation()).norm();
-        T diff_rotation = (T)2 * ceres::acos(r.w());
-
-        residual[0] = diff_translation * T(wt_);
-        residual[1] = diff_rotation * T(wr_);
+        residual[0] = diff_translation.x() * T(wt_);
+        residual[1] = diff_translation.y() * T(wt_);
+        residual[2] = diff_translation.z() * T(wt_);
+        residual[3] = diff_rotation.x() *    T(wr_);
+        residual[4] = diff_rotation.y() * T(wr_);
+        residual[5] = diff_rotation.z() * T(wr_);
 
         return true;
     }
 
     static ceres::CostFunction *Create(const float wt, const float wr)
     {
-        return (new ceres::AutoDiffCostFunction<PoseError, 2, 3, 4, 3, 4>(new PoseError(wt, wr)));
+        return (new ceres::AutoDiffCostFunction<PoseError, 6, 3, 4, 3, 4>(new PoseError(wt, wr)));
     }
 
 private:

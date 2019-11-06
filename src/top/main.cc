@@ -14,7 +14,7 @@
 ros::Publisher pub_pose;
 
 
-#if 1
+#if 0
 using namespace visual_slam;
 
 top::SensorBridge *sensor_bridge;

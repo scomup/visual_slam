@@ -88,7 +88,7 @@ int Tracking::updatePoseByReferenceFrame(Frame *frame)
     opt.addKeys(frame_id, frame->keys0());
     opt.addPoints(frame_id, frame->tps());
     */
-   opt.setFrameNum(2);
+    opt.setFrameNum(2);
     opt.addPose(0, ref_frame->Tcw());
     opt.addKeys(0, ref_frame->keys0());
     opt.addPoints(0, ref_frame->tps());
@@ -115,6 +115,7 @@ int Tracking::updatePoseByReferenceFrame(Frame *frame)
     //problem.Evaluate(evaluate_options, &total_cost, &residuals, nullptr, nullptr);
     //std::cout << "Finial total cost:" << total_cost << "\n";
     Tcw_ = opt.getNewPose();
+    opt.resetTps();
 
     auto&frame_tps = frame->tps();
     int num = 0;
