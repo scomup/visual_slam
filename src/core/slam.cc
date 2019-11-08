@@ -42,9 +42,19 @@ const transform::Rigid3f& Slam::Tcw() const{
     else
         transform::Rigid3f();
 }
+
+void Slam::getPoints(pcl::PointCloud<pcl::PointXYZ>::Ptr& pc) const{
+    tracking_->getPoints(pc);
+}
+
 int Slam::TrackStereoCamera(std::unique_ptr<sensor::MultiImageData> image)
 {
+    static int  c = 0;
+    //c++;
+    //if(c==10){
     tracking_->HandleImage(std::move(image));
+    //c=0;
+    //}
     
     /*
     // Check mode change

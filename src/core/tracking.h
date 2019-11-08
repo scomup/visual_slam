@@ -6,11 +6,14 @@
 
 #include<mutex>
 #include<memory>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
 
 #include "src/sensor/odometry_data.h"
 #include "src/sensor/image_data.h"
 #include "src/core/superpoint_frontend.h"
 #include "src/core/frame.h"
+#include"src/core/tracked_point.h"
 
 #include <deque>
 
@@ -28,12 +31,19 @@ public:
     void HandleOdometry(const std::unique_ptr<sensor::OdometryData> odom);
     void HandleImage(const std::unique_ptr<sensor::MultiImageData> image);
     const transform::Rigid3f& Tcw() const;
+    void getPoints(pcl::PointCloud<pcl::PointXYZ>::Ptr& pc) const;
 
 private:
-    void trackingByReferenceFrame(Frame* frame);
-    int updatePoseByReferenceFrame(Frame* frame);
-    void showReporjection(std::string mark);
-    void createTrackedPointsbyStereo(Frame* frame);
+    void updateTracks();
+    void updatePoses();
+    void showReprojection(std::string mark);
+    cv::Point reprojection(const TrackedPoint *tp, const transform::Rigid3f &Tcw) const;
+    void removeOutlier();
+    void updateTrackedPoints();
+    void solveCamera();
+    void solvePoints();
+    void searchProjection(const float radius);
+
 
 
     std::list<Frame*> frames_;
@@ -49,10 +59,9 @@ private:
     float cy_;
     float bf_;
     float nn_thresh_;
-
+    
     std::list<std::vector<int>> tracks_;
-    std::vector<Eigen::Vector3f> tracked_points_;
-    std::list<TrackedPoint*> tps_;
+    std::vector<TrackedPoint*> tracked_points_;
     transform::Rigid3f Tcw_;
 
 };

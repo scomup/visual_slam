@@ -1,4 +1,3 @@
-
 #ifndef VISUAL_SLAM_CORE_OPTIMIZER_H_
 #define VISUAL_SLAM_CORE_OPTIMIZER_H_
 
@@ -6,6 +5,9 @@
 #include "src/core/reprojection_error.h"
 #include "src/core/frame.h"
 #include "src/core/ceres_pose.h"
+#include"src/core/tracked_point.h"
+
+
 namespace visual_slam
 {
 
@@ -22,17 +24,15 @@ struct PoseData
 class Optimizer
 {
 public:
-    Optimizer(){frames_num_ =0;};
+    Optimizer(){};
 
-    void addPose(const int frame_id, const transform::Rigid3f pose);
-    void addPoints(const int frame_id, const std::vector<TrackedPoint *>& tps);
-    void addKeys(const int frame_id, const std::vector<cv::Point>& points);
+    void addPose(const transform::Rigid3f pose);
+    void addPoints(const std::vector<TrackedPoint*>& points);
+    void addKeys(const std::vector<cv::Point>& points);
     void solve();
-    void addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K);
-    transform::Rigid3f getNewPose() const;
-    void setFrameNum(const int n);
-    void resetTps();
-
+    void addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K, std::list<std::vector<int>>& tracks, bool fix_camera_or_point);
+    transform::Rigid3f getPose(const int id) const;
+     std::vector<std::array<double, 3>>& getPoints() ;
 private:
     PoseData FromPose(const transform::Rigid3f &pose);
 
@@ -40,10 +40,7 @@ private:
     std::vector<PoseData> poses_;
     YAML::Node *config_;
     std::vector<std::array<double, 3>> points_;
-    std::vector<std::vector<int>> tracks_; 
     std::vector<std::vector<std::array<double, 2>>> keys_;
-    std::map<TrackedPoint*, int> check_points_;
-    int frames_num_;
 };
 
 

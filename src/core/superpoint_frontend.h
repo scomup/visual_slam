@@ -33,7 +33,7 @@ public:
                                  const cv::Mat &desc0,
                                  const std::vector<cv::Point> &keys1,
                                  const cv::Mat &desc1);
-
+    //const float getScore(const cv::Mat &desc0,const cv::Mat &desc1);
 private:
     const YAML::Node *config_;
     torch::jit::script::Module module_;

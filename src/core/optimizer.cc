@@ -1,5 +1,4 @@
 #include <cmath>
-//#include "ceres/ceres.h"
 #include <iostream>
 #include <fstream>
 
@@ -12,60 +11,25 @@ namespace visual_slam
 namespace core
 {
 
-void Optimizer::setFrameNum(const int n)
-{
-    frames_num_ = n;
-}
-
-void Optimizer::resetTps()
-{
-    for (auto m : check_points_)
-    {
-        auto &tp = m.first;
-        auto id = m.second;
-        tp->Pw.x() = points_[id][0];
-        tp->Pw.y() = points_[id][1];
-        tp->Pw.z() = points_[id][2];
-    }
-}
-
-void Optimizer::addPose(const int frame_id, const transform::Rigid3f pose)
+void Optimizer::addPose(const transform::Rigid3f pose)
 {
     poses_.emplace_back(FromPose(pose));
 }
 
-void Optimizer::addPoints(const int frame_id, const std::vector<TrackedPoint *> &tps)
+void Optimizer::addPoints(const std::vector<TrackedPoint *> &points)
 {
-    std::vector<int> t;
-
-    for (int i = 0; i < (int)tps.size(); i++)
+    //double avg = 0;
+    for (auto p : points)
     {
-        auto &p = tps[i];
-        if (p == nullptr)
-            continue;
-
-        if (check_points_.find(p) != check_points_.end())
-        {
-            int tp_id = check_points_[p];
-            tracks_[tp_id][frame_id] = i;
-            //std::cout<<keys_[0][tracks_[tp_id][0]][0]<<","<<keys_[0][tracks_[tp_id][0]][1]<<std::endl;
-            //std::cout<<keys_[1][tracks_[tp_id][1]][0]<<","<<keys_[0][tracks_[tp_id][0]][1]<<std::endl;
-        }
-        else
-        {
-            points_.push_back({p->Pw.x(), p->Pw.y(), p->Pw.z()});
-            auto t = std::vector<int>(frames_num_);
-            std::fill(t.begin(), t.end(), -1);
-            t[frame_id] = i;
-            check_points_[p] = points_.size()-1;
-            tracks_.push_back(t);
-        }
+        points_.push_back({p->Pw.x(), p->Pw.y(), p->Pw.z()});
+        //avg += p->frame_cont;
     }
+    //std::cout << "frame_cont:" << avg / points.size() << std::endl;
 }
 
-void Optimizer::addKeys(const int frame_id, const std::vector<cv::Point> &points)
-{  
-    std::vector< std::array<double, 2> > keys;
+void Optimizer::addKeys(const std::vector<cv::Point> &points)
+{
+    std::vector<std::array<double, 2>> keys;
     for (auto p : points)
         keys.push_back({(double)p.x, (double)p.y});
     keys_.push_back(keys);
@@ -73,85 +37,157 @@ void Optimizer::addKeys(const int frame_id, const std::vector<cv::Point> &points
 
 PoseData Optimizer::FromPose(const transform::Rigid3f &pose)
 {
-    
+    auto rpy = pose.rotation().toRotationMatrix().eulerAngles(0, 1, 2);
     return PoseData{{{pose.translation().x(), pose.translation().y(),
-                                 pose.translation().z()}},
-                               {{pose.rotation().w(), pose.rotation().x(),
-                                 pose.rotation().y(), pose.rotation().z()}}};
-                                 
+                      pose.translation().z()}},
+                    {{rpy.x(),
+                      rpy.y(), rpy.z()}}};
 }
 
-void Optimizer::solve(){
-
-
-}
-
-transform::Rigid3f Optimizer::getNewPose() const
+void Optimizer::solve()
 {
-    auto pose = poses_.back();
-
-    return transform::Rigid3f(Eigen::Vector3f(pose.translation[0],pose.translation[1],pose.translation[2]),
-                  Eigen::Quaternionf(pose.rotation[0], pose.rotation[1], pose.rotation[2], pose.rotation[3]));
-
 }
-void Optimizer::addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K)
-{
 
+transform::Rigid3f Optimizer::getPose(const int id) const
+{
+    auto pose = poses_[id];
+    const Eigen::AngleAxisf roll_angle(pose.rotation[0],  Eigen::Vector3f::UnitX());
+    const Eigen::AngleAxisf pitch_angle(pose.rotation[1], Eigen::Vector3f::UnitY());
+    const Eigen::AngleAxisf yaw_angle(pose.rotation[2], Eigen::Vector3f::UnitZ());
+    Eigen::Quaternionf q =  yaw_angle * pitch_angle * roll_angle;
+    return transform::Rigid3f(Eigen::Vector3f(pose.translation[0], pose.translation[1], pose.translation[2]), q);
+}
+void Optimizer::addReprojectionEdges(ceres::Problem &problem, Eigen::Matrix3f K, std::list<std::vector<int>> &tracks, bool fix_camera_or_point)
+{
+    if (tracks.size() < 2)
+        return;
+    Eigen::Matrix2f information;
+    information << 1, 0, 0, 1;
+    ceres::CostFunction *cost_function;
+    cost_function = ReprojectionError::Create(information, K);
+    auto param = common::make_unique<ceres::QuaternionParameterization>();
+    auto loss = common::make_unique<ceres::HuberLoss>(100);
+
+    ceres::CostFunction *cost_pose;
+    cost_pose = PoseError::Create(100, 100);
+
+    /*
+    problem.AddParameterBlock(poses_[0].translation.data(), 3);
+    problem.AddParameterBlock(poses_[0].rotation.data(), 3);
+
+    for (size_t i = 1; i < poses_.size(); i++)
+    {
+        problem.AddParameterBlock(poses_[i].translation.data(), 3);
+        problem.AddParameterBlock(poses_[i].rotation.data(), 3);
+
+        problem.AddResidualBlock(cost_pose, nullptr,
+                                 poses_[i-1].translation.data(),
+                                 poses_[i-1].rotation.data(),
+                                 poses_[i].translation.data(),
+                                 poses_[i].rotation.data());
+    }
+    */
+    /*
+    for (auto &pose : poses_)
+    {
+        problem.AddParameterBlock(pose.translation.data(), 3);
+        problem.AddParameterBlock(pose.rotation.data(), 3);
+        if (!fix_camera_or_point)
+        {
+            problem.SetParameterBlockConstant(reinterpret_cast<double *>(pose.translation.data()));
+            problem.SetParameterBlockConstant(reinterpret_cast<double *>(pose.rotation.data()));
+        }
+    }*/
+
+    for (size_t i = 0; i < points_.size() - 1; i++)
+    {
+        auto &point3d = points_[i];
+
+        int frame_id = 0;
+        //std::cout<<point3d[0]<<","<<point3d[1]<<","<<point3d[2]<<std::endl;
+        int trecked_frame = 0;
+        int frame_num = tracks.size();
+        //for (auto &track : tracks)
+        //{
+        //    int cur_idx = track[i];
+        //    if (cur_idx != -1)
+        //    {
+        //        trecked_frame++;
+        //    }
+        //}
+
+        for (auto &track : tracks)
+        {
+            int cur_idx = track[i];
+            //if (frame_num != trecked_frame)
+            //    continue;
+            if (cur_idx != -1)
+            {
+                auto &pose = poses_[frame_id];
+                std::array<double, 2> &uv = keys_[frame_id][cur_idx];
+                problem.AddResidualBlock(cost_function, loss.release(),
+                                         point3d.data(),
+                                         uv.data(),
+                                         pose.translation.data(),
+                                         pose.rotation.data());
+                problem.SetParameterBlockConstant(reinterpret_cast<double *>(uv.data()));
+                if (fix_camera_or_point)
+                {
+                    problem.SetParameterBlockConstant(reinterpret_cast<double *>(point3d.data()));
+                }
+
+                //std::cout << "frame_" << frame_id << ":" << uv[0] << "," << uv[1] << std::endl;
+            }
+
+            frame_id++;
+        }
+        //std::cout<<"------------"<<std::endl;
+    }
+
+    /*
+    if (tracks.size() < 2)
+        return;
     Eigen::Matrix2f information;
     information << 1, 0, 0, 1;
 
-
-    if(points_.size()==0)
-        return;
-
-    auto param = common::make_unique<ceres::QuaternionParameterization>();
-
-    ceres::CostFunction *cost_pose;
-    cost_pose = PoseError::Create(1, 1);
-/*
-    for (size_t i = 0; i < poses_.size() - 1; i++)
-    {
-        problem.AddParameterBlock(poses_[i].translation.data(), 3);
-        problem.AddParameterBlock(poses_[i].rotation.data(), 4, param.release());
-        problem.AddParameterBlock(poses_[i+1].translation.data(), 3);
-        problem.AddParameterBlock(poses_[i+1].rotation.data(), 4, param.release());
-
-        problem.AddResidualBlock(cost_pose, nullptr,
-                                 poses_[i].translation.data(),
-                                 poses_[i].rotation.data(),
-                                 poses_[i+1].translation.data(),
-                                 poses_[i+1].rotation.data());
-    }
-*/
     ceres::CostFunction *cost_function;
     cost_function = ReprojectionError::Create(information, K);
 
-    for (size_t i = 0; i < tracks_.size(); i++)//for each tracked point
-    {//i 
+    auto& pose = poses_.back();
+    
+    auto &keys = keys_.back();
+    auto param = common::make_unique<ceres::QuaternionParameterization>();
+    for (size_t i = 0; i < points_.size() - 1; i++)
+    {
         auto &point3d = points_[i];
-        problem.AddParameterBlock(point3d.data(), 3);
-        problem.SetParameterBlockConstant(reinterpret_cast<double *>(point3d.data()));
-        for (size_t j = 0; j < frames_num_; j++)//for each frame 
-        {
-            int key_id = tracks_[i][j];
-            if (key_id == -1)
-                continue;
-            std::array<double, 2> &uv = keys_[j][key_id];
-            //std::cout<<uv[0]<<","<<uv[1]<<std::endl;
 
-            problem.AddParameterBlock(poses_[j].translation.data(), 3);
-            problem.AddParameterBlock(poses_[j].rotation.data(), 4, param.release());
+        if(point3d[0] == 0 && point3d[1]==0 && point3d[2]==0)
+            continue;
 
-            problem.AddResidualBlock(cost_function, nullptr,
-                                     point3d.data(),
-                                     uv.data(),
-                                     poses_[j].translation.data(),
-                                     poses_[j].rotation.data());
-            problem.SetParameterBlockConstant(reinterpret_cast<double *>(uv.data()));
-        }
-    }
+        auto curr_track = *(tracks.rbegin());
+        //auto prev_track = *(++tracks.rbegin());
+        int cur_idx = curr_track[i];
+        if(cur_idx == -1)
+            continue;
+        std::array<double, 2>& uv = keys[cur_idx];
+
+        problem.AddParameterBlock(pose.translation.data(), 3);
+        problem.AddParameterBlock(pose.rotation.data(), 4, param.release());
+
+        problem.AddResidualBlock(cost_function, nullptr,
+                                 point3d.data(),
+                                 uv.data(),
+                                 pose.translation.data(),
+                                 pose.rotation.data());
+        problem.SetParameterBlockConstant(reinterpret_cast<double *>(uv.data()));
+        problem.SetParameterBlockConstant(reinterpret_cast<double *>(point3d.data()));                     
+    }*/
 }
 
+ std::vector<std::array<double, 3>>& Optimizer::getPoints() {
+    return points_;
+
+}
 
 } // namespace core
 } // namespace visual_slam

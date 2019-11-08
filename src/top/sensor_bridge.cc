@@ -46,7 +46,7 @@ std::unique_ptr<sensor::ImageData> SensorBridge::ToImageData(const sensor_msgs::
   cv::Mat img;
   cv_ptr->image.copyTo(img);
 
-  //cv::resize(img,img,cv::Size(),0.5,0.5);
+  cv::resize(img,img,cv::Size(),0.5,0.5);
 
   return common::make_unique<sensor::ImageData>(sensor::ImageData{time, img});
 
