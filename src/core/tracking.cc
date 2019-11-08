@@ -192,8 +192,6 @@ void Tracking::getPoints(pcl::PointCloud<pcl::PointXYZ>::Ptr& pc) const
 void Tracking::updateTracks()
 {
     
-    if (frames_.size() < 2)
-        return;
     searchProjection(30);
 
     auto &current_frame = *(frames_.rbegin());
@@ -203,7 +201,8 @@ void Tracking::updateTracks()
     auto &prev_frame = *(++frames_.rbegin());
     auto &prev_keys = prev_frame->keys0();
     auto &prev_desc = prev_frame->desc0();
-
+/*
+    for()
     auto matches = kp_frontend_->twoWayMatching(prev_keys, prev_desc, curr_keys, curr_desc);
 
     if (tracks_.size() == 0)
@@ -284,7 +283,7 @@ void Tracking::updateTracks()
             tracked_points_.erase(tracked_points_.begin() + i);
             i--;
         }
-    }
+    }*/
 }
 void Tracking::showReprojection(std::string mark)
 {
@@ -457,13 +456,13 @@ void Tracking::searchProjection(const float radius)
     auto &key = frames_.back()->keys0();
     auto &tps = frames_.back()->tps();
     auto &desc = frames_.back()->desc0();
+    tracks_.push_back(std::vector<int>(tracked_points_.size(),-1));
     auto &tracks = tracks_.back();
-    std::vector<int> candidates;
 
     for (int i = 0; i < (int)tracked_points_.size(); i++)
     {
-        if(tracks[i] != -1)
-            continue;
+        //if(tracks[i] != -1)
+        //    continue;
         cv::Point reproj = reprojection(tracked_points_[i], Tcw);
         if(reproj.x > 2*cx_ || reproj.x <0 )
             continue;
@@ -499,13 +498,38 @@ void Tracking::searchProjection(const float radius)
 void Tracking::HandleImage(std::unique_ptr<sensor::MultiImageData> image)
 {
     Frame *current_frame = new Frame(image->image0, image->image1, image->time, kp_frontend_);
-    if (frames_.size() == 2)
+    if (current_frame->id() == 0)
     {
-        //frames_.pop_back();
-        //tracks_.pop_back();
+        current_frame->setTcw(transform::Rigid3f());
+        auto& keys = current_frame->keys0();
+        std::vector<int> t;
+
+        for (int i = 0; i < keys.size(); i++)
+        {
+            auto &key = keys[i];
+
+            Eigen::Vector3f point3d(0, 0, 0);
+            bool good = current_frame->computePoint3d(i, point3d);
+            if (!good)
+                continue;
+            auto tp = new TrackedPoint(point3d);
+            tp->desc = current_frame->desc0().row(i);
+            current_frame->tps()[i] = tp;
+            tracked_points_.push_back(tp);
+            t.push_back(i);
+        }
+        tracks_.push_back(t);
+        frames_.push_back(current_frame);
+        return;
     }
-    frames_.push_back(current_frame);
-    updateTracks();
+    else
+    {
+        current_frame->setTcw(frames_.back()->Tcw());
+        frames_.push_back(current_frame);
+    }
+    searchProjection(30);
+
+    //updateTracks();
     updatePoses();
     removeOutlier();
     updatePoses();
